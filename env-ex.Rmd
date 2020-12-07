@@ -5,12 +5,99 @@ Lesen Sie das ["Environments"](https://adv-r.hadley.nz/environments.html)-Kapite
 Bearbeiten Sie die folgenden, teilweise von dort übernommenen Aufgaben:
 
 a) Inwiefern unterscheiden sich in R Listen (`list`) von `environment`s?
+- Wenn man ein Enviroment kopiert und dann den Eintrag im Original veraendert, wird auch der Eintrag in der Kopie veraendert. Das passiert bei Listen nicht.      (reference semantics)
+- Bei environments koennen bei [[.]] keine numerischen Indices genutzt werden bzw. kann [. gar nicht genutzt werden.
+- Jedes environment hat ein parent environment
+- environments sind nicht geordnet, also keine Rangreihenfolge (wie Mengen). n-tes Element eines environment ist nicht moeglich.
+
 b) Wo suchen `ls()` und `rm()` wenn nicht explizit ein `environment` angegeben wird?
-c) Wo legt `<-` eine (neue) `binding` an? Wo `<<-`?
+Beide suchen, wenn nichts anderes angegeben, im aktuellen environment zuerst. Da inherits per Deaulft auf FALSE ist, werden auch keine parent environments durchsucht.
+
+c) Wo legt `<-` eine (neue) `binding` an?
+`<-` legen immer im aktuellen environment Bindungen an. Deswegen kann man Variablen, welche im globalen environment schon benutzt wurden, trotzdem im Rumpf einer Funktion benutzen ohne sie zu ueberschreiben bzw. es irgendwelche Probleme gibt.
+
+Wo `<<-` (super assignment)?
+Hier wird in einem parent environment so lange gesucht bis eine "passende" (gleicher Name) Variable gefunden wurde. 
+Nutzt man also ein super assignment innerhalb des Rumpfes einer Funktion werden hier auch Variablen ausserhalb, also im parent environment, ueberschrieben.
+Frage: Kann ein super assignment genutzt werden um einen progress bar fuer einen langen loop zu erhalten?
+
+
 d) Schreiben sie eine modifizierte Version `anywhere()` der Funktion `where()` aus dem `pryr`-Paket (**nicht** der im Buch definierten Funktion `where`), die *alle* Umgebungen im Suchpfad die eine Variable des gegebenen Namens enthalten in Form einer Liste zurückgibt. Überprüfen Sie ihre Implementation mit `test-env-anywhere.R`.
 
 ```{r, where}
 pryr::where
+# 'anywhere' shows all environments in which an object, and everything in R is an object, is lives. In the example t is used as vector and as the function transpose from base.
+# Inputs are a character of max length 1 and an enviroment. env is per default parent.frame()
+# Output is a list with all environments in which the object lives.
+
+anywhere <- function(name, env = parent.frame()) {
+    checkmate::assert_character(name, max.len = 1)  #nie wieder buckeliges CamelCase :)
+    checkmate::assert_environment(x = env)          
+    
+    envs <- list()
+    
+   while (TRUE) {
+       
+       if (identical(env, emptyenv())) break
+     
+       if (!exists(name, env, inherits = FALSE)) {
+           env <- parent.env(env)
+           next
+       }
+       if (exists(name, env, inherits = FALSE)) {
+           envs <- c(envs, env)
+           env <- parent.env(env)
+       }
+   }
+    envs
+   }
+
+library(testthat)
+
+context("anywhwere")
+
+e0 <- list2env(list(t = 0))
+e1 <- list2env(list(x = 1))
+e2 <- list2env(list(t = 2))
+t <- 3
+parent.env(e0) <- e1
+parent.env(e1) <- e2
+# so: e0 is child of e1 is child of e2 is child of .GlobalEnv
+
+test_that("anywhere has basic functionality", {
+  expect_is(
+    test1 <- anywhere("t", env = e0),
+    "list"
+  )
+  expect_identical(
+    test1,
+    list(e0, e2, globalenv(), baseenv())
+  )
+  expect_identical(
+    anywhere("t"),
+    list(globalenv(), baseenv())
+  )
+})
+
+test_that("anywhere deals with errors & failures", {
+  expect_identical(
+    anywhere("nothing_found", env = emptyenv()),
+    list()
+  )
+  # these should be error messages you trigger via input checks:
+  expect_error(
+    anywhere(23, env = e0)
+  )
+  expect_error(
+    anywhere(c("t", "x"), env = e0)
+  )
+  expect_error(
+    anywhere("t", env = "env")
+  )
+})
+
+
+
 ```
 
 *Hinweis:* Die Funktion `to_env()`, die in `pryr::where()` benutzt wird wird nicht von `pryr` exportiert. Sie können die Funktion trotzdem mittels `pryr:::to_env()` aufrufen.
